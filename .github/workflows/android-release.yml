@@ -52,6 +52,7 @@ jobs:
             echo "::error::First attach ChitayuSam-source.zip to the v0.5.1 GitHub Release."
             exit 1
           fi
+          echo '806d00de0ba075e751970f663a8a6bc1a85d6d5f4574632133752036409aadd5  source-download/ChitayuSam-source.zip' | sha256sum --check --
           unzip -q source-download/ChitayuSam-source.zip -d build-source
           test -f build-source/android/app/build.gradle
           test -f build-source/android/app/src/main/assets/index.html
