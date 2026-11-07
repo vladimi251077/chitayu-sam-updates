@@ -79,18 +79,18 @@ jobs:
           # Force the debug variant to sign with exactly the restored keystore.
           # Gradle's default location may vary on CI runners.
           signing = """    signingConfigs {
-        debug {
-            storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
-            storePassword 'android'
-            keyAlias 'androiddebugkey'
-            keyPassword 'android'
-        }
-    }
-    buildTypes {
-        debug {
-            signingConfig signingConfigs.debug
-        }
-    }
+                  debug {
+                      storeFile file(System.getProperty('user.home') + '/.android/debug.keystore')
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+              }
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.debug
+                  }
+              }
 """
           if data.count('    defaultConfig {') != 1:
               raise SystemExit('Could not find unique defaultConfig block')
