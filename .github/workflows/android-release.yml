@@ -101,7 +101,7 @@ jobs:
           fi
 
       - name: Install v0.7.0 calm animation and accessibility assets
-        if: env.VERSION_NAME == '0.7.0'
+        if: env.VERSION_NAME == '0.7.0' || env.VERSION_NAME == '0.8.0'
         shell: bash
         run: |
           python3 - <<'PY'
@@ -127,6 +127,50 @@ jobs:
           page.write_text(html,encoding='utf8')
           print('Applied offline motion + legibility assets for v0.7.0')
           PY
+
+      - name: Install v0.8.0 extended letters and syllable blending tutorial
+        if: env.VERSION_NAME == '0.8.0'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip, json, hashlib
+          root=Path('build-source/android')
+          sha=lambda s: hashlib.sha256(s.encode('utf8')).hexdigest()
+          def load_package(path, expected):
+              text=Path(path).read_text(encoding='ascii')
+              if sha(text)!=expected: raise SystemExit('Unexpected patch package: '+path)
+              return json.loads(gzip.decompress(base64.b64decode(text.strip(),validate=True)))
+          def apply_changes(pack):
+              for name, patch in pack['patches'].items():
+                  if name not in ('app/src/main/assets/app.js','app/src/main/java/ru/chitayusam/app/MainActivity.java'):
+                      raise SystemExit('Unexpected source path '+name)
+                  path=root/name
+                  code=path.read_text(encoding='utf8')
+                  if sha(code)!=patch['old_sha256']:
+                      raise SystemExit('Unexpected baseline for '+name+': '+sha(code))
+                  for start,end,replacement in reversed(patch['edits']):
+                      code=code[:start]+replacement+code[end:]
+                  if sha(code)!=patch['new_sha256']:
+                      raise SystemExit('Patch integrity check failed: '+name)
+                  path.write_text(code,encoding='utf8')
+          base=load_package('overrides/v080-pack.txt','98588f6d128d6d65306828d876f15b017d651d1595784163865c896c99628adb')
+          if base.get('schema')!=3:raise SystemExit('Unexpected v0.8 package schema')
+          apply_changes(base)
+          css=root/'app/src/main/assets/v080-phonics.css'
+          css.write_text(base['extra']['v080-phonics.css'],encoding='utf8')
+          fix=load_package('overrides/v080-fix.txt','1f1c2c43964b2f58be8a3aa1cae2872c6341bece55ef6c0d029de8c0ee021185')
+          if fix.get('schema')!=1:raise SystemExit('Unexpected v0.8 final patch schema')
+          apply_changes(fix)
+          css.write_text(css.read_text(encoding='utf8')+fix['css_append'],encoding='utf8')
+          index=root/'app/src/main/assets/index.html'
+          html=index.read_text(encoding='utf8')
+          if html.count('</head>')!=1:raise SystemExit('Unexpected app HTML')
+          html=html.replace('</head>',"  <link rel='stylesheet' href='v080-phonics.css?v=0.8.0'/></head>")
+          index.write_text(html,encoding='utf8')
+          print('v0.8.0: 20 letters, 105 progressive sessions and sound-blending studio')
+          PY
+          node --check build-source/android/app/src/main/assets/app.js
 
       - name: Set Android version from release tag
         shell: bash
@@ -279,13 +323,13 @@ jobs:
               echo 'Release already published; not replacing its assets.'
               exit 0
             fi
-            if [ "$RELEASE_TAG" != "v0.6.0" ] && [ "$RELEASE_TAG" != "v0.7.0" ]; then
+            if [ "$RELEASE_TAG" != "v0.6.0" ] && [ "$RELEASE_TAG" != "v0.7.0" ] && [ "$RELEASE_TAG" != "v0.8.0" ]; then
               echo "::error::Publication not enabled for this version."
               exit 1
             fi
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "Читаю сам — Серебряный лес $RELEASE_TAG" \
-              --notes "Спокойные анимации карточек, реакции Кая на ответы, награда в конце урока и улучшенная читаемость текста. Сохранение прогресса, работа без интернета."
+              --notes "Букварь расширен до 20 букв, последовательный курс до 105 коротких занятий. Мастерская слогов объясняет соединение звуков по шагам: первый звук, второй, затем вместе. Старый прогресс сохраняется. Новые звуки озвучиваются установленным автономным русским голосом Samsung либо локальными записями взрослого."
           else
             if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
