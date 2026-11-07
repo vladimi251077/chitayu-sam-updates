@@ -128,7 +128,7 @@ jobs:
             exit 1
           fi
           cp build-source/android/app/build/outputs/apk/debug/app-debug.apk ChitayuSam.apk
-          shasum -a 256 ChitayuSam.apk > ChitayuSam.apk.sha256
+          sha256sum ChitayuSam.apk > ChitayuSam.apk.sha256
           echo "Verified signature SHA-256 certificate: $NEW"
 
       - name: Keep APK as a downloadable Actions artifact
