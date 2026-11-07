@@ -128,6 +128,16 @@ jobs:
           NEW="$("$APKSIGNER" verify --print-certs build-source/android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
           echo "Published v0.5.1 certificate SHA-256: ${OLD:-not found}"
           echo "GitHub-built APK certificate SHA-256: ${NEW:-not found}"
+          {
+            echo "### Android signing certificate comparison"
+            echo ""
+            echo "| APK | Certificate SHA-256 |"
+            echo "| --- | --- |"
+            echo "| Published v0.5.1 | \`${OLD:-not found}\` |"
+            echo "| Newly built | \`${NEW:-not found}\` |"
+            echo ""
+            echo "These are public certificate fingerprints, not the private signing key."
+          } >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$OLD" ] || [ -z "$NEW" ] || [ "$OLD" != "$NEW" ]; then
             echo "::error::Signing certificate mismatch. No APK published. Confirm the original Mac debug.keystore and the v0.5.1 baseline APK, then replace the GitHub Secret only if necessary."
             exit 1
