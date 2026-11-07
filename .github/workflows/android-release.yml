@@ -9,6 +9,8 @@ on:
         default: 'v0.5.1'
         type: string
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*'
 
@@ -32,6 +34,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ inputs.release_tag }}"
+          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            TAG="v0.5.1"
           else
             TAG="$GITHUB_REF_NAME"
           fi
@@ -165,8 +169,9 @@ jobs:
       - name: Verify signature matches published v0.5.1 APK
         shell: bash
         run: |
-          mkdir -p baseline
-          gh release download v0.5.1 --repo "$GITHUB_REPOSITORY"             --pattern 'ChitayuSam.apk' --dir baseline
+          # The preflight step already downloaded this exact baseline APK.
+          # Re-downloading it makes gh fail with "already exists".
+          test -s baseline/ChitayuSam.apk
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           OLD="$("$APKSIGNER" verify --print-certs baseline/ChitayuSam.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
           NEW="$("$APKSIGNER" verify --print-certs build-source/android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
