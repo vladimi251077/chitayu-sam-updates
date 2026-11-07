@@ -91,7 +91,7 @@ jobs:
                       signingConfig signingConfigs.debug
                   }
               }
-"""
+          """
           if data.count('    defaultConfig {') != 1:
               raise SystemExit('Could not find unique defaultConfig block')
           data=data.replace('    defaultConfig {',signing+'    defaultConfig {',1)
