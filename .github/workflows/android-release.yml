@@ -122,8 +122,8 @@ jobs:
           html=page.read_text(encoding='utf8')
           if html.count('</head>')!=1 or html.count('</body>')!=1:
               raise SystemExit('Unexpected app HTML')
-          html=html.replace('</head>',"  <link rel='stylesheet' href='v070-effects.css?v=0.7.0'/>\\n</head>")
-          html=html.replace('</body>',"  <script src='v070-effects.js?v=0.7.0'></script>\\n</body>")
+          html=html.replace('</head>',"  <link rel='stylesheet' href='v070-effects.css?v=0.7.0'/></head>")
+          html=html.replace('</body>',"  <script src='v070-effects.js?v=0.7.0'></script></body>")
           page.write_text(html,encoding='utf8')
           print('Applied offline motion + legibility assets for v0.7.0')
           PY
