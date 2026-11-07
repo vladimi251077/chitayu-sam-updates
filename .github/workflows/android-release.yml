@@ -35,7 +35,11 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ inputs.release_tag }}"
           elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            if [ -f release-request.txt ]; then TAG="$(tr -d '\r\n' < release-request.txt)"; else TAG="v0.5.1"; fi
+            if [ -f ci-test-version.txt ]; then
+              TAG="$(tr -d '\r\n' < ci-test-version.txt)"
+            elif [ -f release-request.txt ]; then
+              TAG="$(tr -d '\r\n' < release-request.txt)"
+            else TAG="v0.5.1"; fi
           else
             TAG="$GITHUB_REF_NAME"
           fi
@@ -95,6 +99,34 @@ jobs:
           print('v0.6 curriculum and original Kai avatar applied')
           PY
           fi
+
+      - name: Install v0.7.0 calm animation and accessibility assets
+        if: env.VERSION_NAME == '0.7.0'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, gzip, base64, hashlib
+          p=Path('overrides/v070-pack.txt')
+          raw=p.read_text(encoding='ascii')
+          expected='22b274fdbc73fbf58a59141c1726261e794c37702b4e170864da7c564c5185bf'
+          if hashlib.sha256(raw.encode('ascii')).hexdigest()!=expected:
+              raise SystemExit('v0.7.0 asset pack checksum mismatch')
+          pack=json.loads(gzip.decompress(base64.b64decode(raw.strip(),validate=True)))
+          if pack.get('schema')!=1 or set(pack['files'])!={'v070-effects.css','v070-effects.js'}:
+              raise SystemExit('Invalid v0.7.0 asset pack')
+          root=Path('build-source/android/app/src/main/assets')
+          for name,content in pack['files'].items():
+              (root/name).write_text(content,encoding='utf8')
+          page=root/'index.html'
+          html=page.read_text(encoding='utf8')
+          if html.count('</head>')!=1 or html.count('</body>')!=1:
+              raise SystemExit('Unexpected app HTML')
+          html=html.replace('</head>',"  <link rel='stylesheet' href='v070-effects.css?v=0.7.0'/>\\n</head>")
+          html=html.replace('</body>',"  <script src='v070-effects.js?v=0.7.0'></script>\\n</body>")
+          page.write_text(html,encoding='utf8')
+          print('Applied offline motion + legibility assets for v0.7.0')
+          PY
 
       - name: Set Android version from release tag
         shell: bash
@@ -239,21 +271,21 @@ jobs:
         shell: bash
         run: |
           if [ "$GITHUB_REF" = 'refs/heads/main' ]; then
-            if [ ! -f release-request.txt ]; then
-              echo 'Validation run: no release requested.'
+            if [ ! -f release-request.txt ] || [ "$(tr -d '\r\n' < release-request.txt)" != "$RELEASE_TAG" ]; then
+              echo "Validation-only run for $RELEASE_TAG; no matching publication request."
               exit 0
             fi
             if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               echo 'Release already published; not replacing its assets.'
               exit 0
             fi
-            if [ "$RELEASE_TAG" != "v0.6.0" ]; then
-              echo "::error::This request workflow only authorizes v0.6.0."
+            if [ "$RELEASE_TAG" != "v0.6.0" ] && [ "$RELEASE_TAG" != "v0.7.0" ]; then
+              echo "::error::Publication not enabled for this version."
               exit 1
             fi
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title "Читаю сам — Серебряный лес $RELEASE_TAG" \
-              --notes "Новые самостоятельные занятия до 20 этапов, составление слов из частей и анимированный волк Кай. Старые данные сохраняются; установку на Samsung подтверждает взрослый."
+              --notes "Спокойные анимации карточек, реакции Кая на ответы, награда в конце урока и улучшенная читаемость текста. Сохранение прогресса, работа без интернета."
           else
             if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
