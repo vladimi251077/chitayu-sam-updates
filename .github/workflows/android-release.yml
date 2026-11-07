@@ -137,6 +137,13 @@ jobs:
           import base64, gzip, json, hashlib
           root=Path('build-source/android')
           sha=lambda s: hashlib.sha256(s.encode('utf8')).hexdigest()
+          # The original v0.6 asset pack hardcodes VERSION='0.6.0';
+          # the checked v0.8 delta is based on the matching v0.7 source.
+          app_js=root/'app/src/main/assets/app.js'
+          source=app_js.read_text(encoding='utf8')
+          if source.count("const VERSION='0.6.0'")!=1:
+              raise SystemExit('Unexpected pre-v0.8 UI version')
+          app_js.write_text(source.replace("const VERSION='0.6.0'","const VERSION='0.7.0'",1),encoding='utf8')
           def load_package(path, expected):
               text=Path(path).read_text(encoding='ascii')
               if sha(text)!=expected: raise SystemExit('Unexpected patch package: '+path)
