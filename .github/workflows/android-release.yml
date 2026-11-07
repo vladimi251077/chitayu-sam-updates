@@ -1,0 +1,148 @@
+name: Android APK — build and publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Version to build (e.g. v0.6.0); manual runs do not publish'
+        required: true
+        default: 'v0.5.1'
+        type: string
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+    steps:
+      - name: Check out project and overrides
+        uses: actions/checkout@v4
+
+      - name: Choose version and validate tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.release_tag }}"
+          else
+            TAG="$GITHUB_REF_NAME"
+          fi
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Use a tag like v0.6.0"
+            exit 1
+          fi
+          CODE=$((10#${BASH_REMATCH[1]}*10000 + 10#${BASH_REMATCH[2]}*100 + 10#${BASH_REMATCH[3]}))
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=${TAG#v}" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+
+      - name: Download the verified source package from v0.5.1
+        shell: bash
+        run: |
+          mkdir -p source-download
+          if ! gh release download v0.5.1 --repo "$GITHUB_REPOSITORY"                --pattern 'ChitayuSam-source.zip' --dir source-download; then
+            echo "::error::First attach ChitayuSam-source.zip to the v0.5.1 GitHub Release."
+            exit 1
+          fi
+          unzip -q source-download/ChitayuSam-source.zip -d build-source
+          test -f build-source/android/app/build.gradle
+          test -f build-source/android/app/src/main/assets/index.html
+
+      - name: Apply optional source overrides from this repository
+        shell: bash
+        run: |
+          if [ -d overrides/android ]; then
+            cp -a overrides/android/. build-source/android/
+          fi
+
+      - name: Set Android version from release tag
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,re
+          from pathlib import Path
+          root=Path('build-source/android')
+          gradle=root/'app/build.gradle'
+          data=gradle.read_text(encoding='utf-8')
+          data,n1=re.subn(r'(?m)^\s*versionCode\s+\d+', '        versionCode '+os.environ['VERSION_CODE'], data)
+          data,n2=re.subn(r"(?m)^\s*versionName\s+'[^']+'", "        versionName '"+os.environ['VERSION_NAME']+"'", data)
+          if n1!=1 or n2!=1: raise SystemExit('Version fields missing/ambiguous')
+          gradle.write_text(data,encoding='utf-8')
+          js=root/'app/src/main/assets/app.js'
+          js.write_text(js.read_text(encoding='utf-8').replace('0.5.1',os.environ['VERSION_NAME']),encoding='utf-8')
+          PY
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK 35
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Set up Gradle 8.9 (source has no wrapper JAR)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore the ORIGINAL Samsung signing key from GitHub Secret
+        shell: bash
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Missing secret ANDROID_DEBUG_KEYSTORE_B64. Do not build with a new debug key."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          test -s "$HOME/.android/debug.keystore"
+
+      - name: Build signed APK
+        shell: bash
+        working-directory: build-source/android
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify signature matches published v0.5.1 APK
+        shell: bash
+        run: |
+          mkdir -p baseline
+          gh release download v0.5.1 --repo "$GITHUB_REPOSITORY"             --pattern 'ChitayuSam.apk' --dir baseline
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          OLD="$("$APKSIGNER" verify --print-certs baseline/ChitayuSam.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+          NEW="$("$APKSIGNER" verify --print-certs build-source/android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+          if [ -z "$OLD" ] || [ "$OLD" != "$NEW" ]; then
+            echo "::error::APK signature differs from installed v0.5.1. Release blocked."
+            exit 1
+          fi
+          cp build-source/android/app/build/outputs/apk/debug/app-debug.apk ChitayuSam.apk
+          shasum -a 256 ChitayuSam.apk > ChitayuSam.apk.sha256
+          echo "Verified signature SHA-256 certificate: $NEW"
+
+      - name: Keep APK as a downloadable Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChitayuSam-${{ env.VERSION_NAME }}
+          path: |
+            ChitayuSam.apk
+            ChitayuSam.apk.sha256
+
+      - name: Publish ONLY tagged releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"               --title "Читаю сам — Серебряный лес $RELEASE_TAG"               --notes "Обновление приложения. Установка подтверждается взрослым на Android."               --verify-tag
+          fi
+          gh release upload "$RELEASE_TAG" ChitayuSam.apk ChitayuSam.apk.sha256             --repo "$GITHUB_REPOSITORY"
