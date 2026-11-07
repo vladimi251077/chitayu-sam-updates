@@ -126,8 +126,10 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           OLD="$("$APKSIGNER" verify --print-certs baseline/ChitayuSam.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
           NEW="$("$APKSIGNER" verify --print-certs build-source/android/app/build/outputs/apk/debug/app-debug.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-          if [ -z "$OLD" ] || [ "$OLD" != "$NEW" ]; then
-            echo "::error::APK signature differs from installed v0.5.1. Release blocked."
+          echo "Published v0.5.1 certificate SHA-256: ${OLD:-not found}"
+          echo "GitHub-built APK certificate SHA-256: ${NEW:-not found}"
+          if [ -z "$OLD" ] || [ -z "$NEW" ] || [ "$OLD" != "$NEW" ]; then
+            echo "::error::Signing certificate mismatch. No APK published. Confirm the original Mac debug.keystore and the v0.5.1 baseline APK, then replace the GitHub Secret only if necessary."
             exit 1
           fi
           cp build-source/android/app/build/outputs/apk/debug/app-debug.apk ChitayuSam.apk
